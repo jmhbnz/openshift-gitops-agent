@@ -199,10 +199,10 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: bgd
-  namespace: managed-cluster
+  namespace: argocd
   finalizers:
     # The default behaviour is foreground cascading deletion
-    - resources-finalizer.argocd.argoproj.io
+    - argocd.argoproj.io/resources-finalizer
 spec:
   destination:
     namespace: bgd
@@ -211,10 +211,15 @@ spec:
     path: apps/base
     repoURL: https://github.com/jmhbnz/openshift-gitops-agent
     targetRevision: HEAD
-  project: managed-cluster
+  project: crl-cer-1
   syncPolicy:
     automated:
       prune: false
       selfHeal: true
 EOF
 #+end_src
+
+#+RESULTS:
+#+begin_example
+application.argoproj.io/bgd configured
+#+end_example

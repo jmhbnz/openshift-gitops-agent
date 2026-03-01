@@ -1,0 +1,20 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io/background
+  name: bgd
+  namespace: argocd
+spec:
+  destination:
+    name: crl-cer-1
+    namespace: bgd
+  project: crl-cer-1
+  source:
+    path: apps/base
+    repoURL: https://github.com/jmhbnz/openshift-gitops-agent
+    targetRevision: HEAD
+  syncPolicy:
+    automated:
+      selfHeal: true
