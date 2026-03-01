@@ -3,4 +3,12 @@ kind: Namespace
 metadata:
   annotations:
     openshift.io/display-name: Argo CD Agent for Managed Cluster
-  name: managed-cluster
+  name: crl-cer-1
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    openshift.io/display-name: Argo CD Agent for Managed Cluster
+  name: crl-cer-2

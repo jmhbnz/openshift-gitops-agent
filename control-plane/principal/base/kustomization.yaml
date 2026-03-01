@@ -3,5 +3,4 @@ namespace: argocd
 resources:
   - argocd.yaml
   - proxy-service.yaml
-  - appproject.yaml
   - route.yaml

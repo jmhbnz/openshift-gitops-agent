@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: managed-cluster
+  name: crl-cer-1
   namespace: argocd
 spec:
   clusterResourceWhitelist:
@@ -10,7 +10,9 @@ spec:
   destinations:
   - namespace: '*'
     server: '*'
+  sourceNamespaces:
+  - managed-cluster
+  - crl-cer-1
+  - crl-cer-2
   sourceRepos:
   - '*'
-  sourceNamespaces:
-  - 'managed-cluster'

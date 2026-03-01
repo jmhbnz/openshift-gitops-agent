@@ -13,8 +13,10 @@ spec:
     principal:
       allowedNamespaces:
         - managed-cluster
+        - crl-cer-1
+        - crl-cer-2
       enabled: true
-      image: 'quay.io/argoprojlabs/argocd-agent:v0.5.1'
+      image: 'quay.io/argoprojlabs/argocd-agent:v0.7.0'
       jwtAllowGenerate: true
       auth: mtls:CN=([^,]+)
   sourceNamespaces:
