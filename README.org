@@ -141,16 +141,16 @@ argocd-server-fdbd85c86-gc2cq             1/1     Running   0          8m50s
 Lastly, we can create our agent configuration on the principal
 
 #+begin_src bash
-argocd-agentctl agent create crl-cer-1 \
+argocd-agentctl agent create crl-cer-2 \
   --principal-context principal \
   --principal-namespace argocd \
   --resource-proxy-server argocd-agent-resource-proxy.argocd.svc.cluster.local:9090
 #+end_src
 
 #+RESULTS:
-#+begin_results
-Agent managed-cluster created
-#+end_results
+#+begin_example
+Agent crl-cer-2 created
+#+end_example
 
 
 * Installing the agent
@@ -158,37 +158,56 @@ Agent managed-cluster created
 With the principal in place let's now deploy our agent
 
 #+begin_src bash
-oc --context crl-cer-1 apply --kustomize operator/base
+oc --context crl-cer-2 apply --kustomize operator/base
 #+end_src
 
 #+RESULTS:
 #+begin_example
-namespace/openshift-gitops-operator unchanged
-operatorgroup.operators.coreos.com/openshift-gitops-operator unchanged
-subscription.operators.coreos.com/openshift-gitops-operator unchanged
+namespace/openshift-gitops-operator created
+operatorgroup.operators.coreos.com/openshift-gitops-operator created
+subscription.operators.coreos.com/openshift-gitops-operator created
 #+end_example
 
 Once the operator is installed we can create the ~argocd~ resource representing our agent. Notice how ~service.enabled~ is set to ~false~.
 
-#+begin_src
-oc --context crl-cer-1 apply --kustomize managed-cluster/argocd/base
+#+begin_src bash
+oc --context crl-cer-2 apply --kustomize managed-cluster/argocd/base
 #+end_src
 
 #+RESULTS:
-#+begin_results:
+#+begin_example
 namespace/argocd created
+appproject.argoproj.io/crl-cer created
 argocd.argoproj.io/argocd created
-#+end_results
+#+end_example
 
 Finish setting up agent
 
 #+begin_src bash
-oc create secret generic argocd-redis -n argocd --from-literal=auth="$(oc get secret argocd-redis-initial-password -n argocd -o jsonpath='{.data.admin\.password}' | base64 -d)"
-argocd-agentctl pki issue agent crl-cer-1 --principal-context principal --principal-namespace argocd --agent-context crl-cer-1 --agent-namespace argocd --upsert
-argocd-agentctl pki propagate crl-cer-1 --principal-context principal --principal-namespace argocd --agent-context crl-cer-1 --agent-namespace argocd
+oc --context crl-cer-2 create secret generic argocd-redis -n argocd --from-literal=auth="$(oc --context crl-cer-2 get secret argocd-redis-initial-password -n argocd -o jsonpath='{.data.admin\.password}' | base64 -d)"
+argocd-agentctl pki issue agent crl-cer-2 --principal-context principal --principal-namespace argocd --agent-context crl-cer-2 --agent-namespace argocd --upsert
+argocd-agentctl pki propagate crl-cer-2 --principal-context principal --principal-namespace argocd --agent-context crl-cer-2 --agent-namespace argocd
 export SUBDOMAIN=$(oc --context principal get dns cluster --output jsonpath='{.spec.baseDomain}')
-kustomize build managed-cluster/agent/base | envsubst | oc apply --filename -
+kustomize build managed-cluster/agent/base | envsubst | oc --context crl-cer-2 apply --filename -
 #+end_src
+
+#+RESULTS:
+#+begin_example
+secret/argocd-redis created
+Secret argocd/argocd-agent-client-tls created
+Agent CA secret argocd/argocd-agent-ca created
+serviceaccount/argocd-agent-agent created
+role.rbac.authorization.k8s.io/argocd-agent-agent created
+clusterrole.rbac.authorization.k8s.io/argocd-agent-agent created
+rolebinding.rbac.authorization.k8s.io/argocd-agent-agent created
+clusterrolebinding.rbac.authorization.k8s.io/agent-application-controller-cluster-admin created
+clusterrolebinding.rbac.authorization.k8s.io/argocd-agent-agent created
+configmap/argocd-agent-params created
+service/argocd-agent-agent-healthz created
+service/argocd-agent-agent-metrics created
+deployment.apps/argocd-agent-agent created
+networkpolicy.networking.k8s.io/argocd-agent-redis-network-policy created
+#+end_example
 
 
 * Deploying a sample application
