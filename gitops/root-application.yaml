@@ -8,11 +8,11 @@ metadata:
   namespace: argocd
 spec:
   destination:
-    name: crl-cer-1
+    name: in-cluster
     namespace: argocd
-  project: crl-cer-1
+  project: crl-cer
   source:
-    path: gitops/crl-cer-1
+    path: gitops/crl-cer*
     repoURL: https://github.com/jmhbnz/openshift-gitops-agent
     targetRevision: HEAD
   syncPolicy:
