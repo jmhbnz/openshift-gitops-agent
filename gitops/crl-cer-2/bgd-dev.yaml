@@ -9,7 +9,7 @@ metadata:
 spec:
   destination:
     name: in-cluster
-    namespace: bgd
+    namespace: bgd-dev
   project: crl-cer
   source:
     path: apps/base
