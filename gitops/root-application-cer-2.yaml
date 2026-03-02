@@ -12,7 +12,7 @@ spec:
     namespace: argocd
   project: crl-cer
   source:
-    path: gitops/crl-cer*
+    path: gitops/crl-cer-2
     repoURL: https://github.com/jmhbnz/openshift-gitops-agent
     targetRevision: HEAD
   syncPolicy:
