@@ -1,3 +1,4 @@
+---
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
@@ -7,6 +8,7 @@ metadata:
     app.kubernetes.io/name: argocd-agent-principal
     app.kubernetes.io/part-of: argocd-agent
   name: argocd-agent-principal
+  namespace: argocd
 spec:
   port:
     targetPort: 8443

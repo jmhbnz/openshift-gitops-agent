@@ -2,12 +2,12 @@
 #+DATE: <2026-03-02 Mon>
 
 
-A short demonstration of the new ArgoCD Agent architecture in ~autonomous~ mode with OpenShift GitOps. This demonstration is adapted from the original [[https://developers.redhat.com/blog/2025/10/06/using-argo-cd-agent-openshift-gitops][blog]] which was based on the ~managed~ mode.
+A short walkthrough for deplying the new ArgoCD Agent architecture in ~autonomous~ mode with OpenShift GitOps. This demonstration is adapted from the original [[https://developers.redhat.com/blog/2025/10/06/using-argo-cd-agent-openshift-gitops][blog]] which was based on the ~managed~ mode. For more context and background information on the ArgodCD Agent architecture please refer to the linked blog.
 
 
 * Pre-requisites
 
-- Two OpenShift Clusters, these instructions have been tested with OpenShift ~4.21~. The instructions assume that you have not installed the OpenShift GitOps operator as it will install the operator with a ~Subscription~ using specific configuration that disables the default instance in openshift-gitops.
+- Two OpenShift Clusters, these instructions have been tested with OpenShift ~4.21~. The instructions assume that you have not installed the OpenShift GitOps operator as it will install the operator with a ~Subscription~ using specific configuration. If you already have the OpenShift GitOps Operator installed, review this aspect of the walkthrough carefully and adjust as neccessary for your environment.
 
 - Access to those two clusters with cluster-admin privileges. This guide assumes you have two named ~oc~ contexts available, ~principal~ (hub) and ~crl-cer-1~ (autonomous agent).
 
@@ -26,18 +26,18 @@ The first part of this process is to set up our hub cluster as the **principal**
 
 Assuming this repository is cloned we can begin by installing OpenShift GitOps on the hub cluster as follows:
 
-#+begin_quote
-IMPORTANT: This will install the Operator with additional configuration in the Subscription including the option which disables the default OpenShift GitOps instance in the openshift-gitops namespace. **Do not run this command in a cluster where OpenShift GitOps is already installed and being actively used.**
-#+end_quote
-
 #+begin_src bash
-oc --context principal apply --kustomize operator/base
+oc --context principal apply --filename 1-principal/operator-namespace.yaml
+oc --context principal apply --filename 1-principal/operator-subscription.yaml
+oc --context principal apply --filename 1-principal/operator-group.yaml
 #+end_src
 
 #+RESULTS:
-| namespace/openshift-gitops-operator                          | unchanged |
-| operatorgroup.operators.coreos.com/openshift-gitops-operator | unchanged |
-| subscription.operators.coreos.com/openshift-gitops-operator  | unchanged |
+#+begin_example
+namespace/openshift-gitops-operator unchanged
+subscription.operators.coreos.com/openshift-gitops-operator unchanged
+operatorgroup.operators.coreos.com/openshift-gitops-operator unchanged
+#+end_example
 
 We can review the pods in the ~openshift-gitops-operator~ namespace to confirm the operator has installed and is running:
 
@@ -47,24 +47,24 @@ oc --context principal get pods --namespace openshift-gitops-operator
 
 #+RESULTS:
 #+begin_example
-NAME                                                            READY   STATUS    RESTARTS   AGE
-openshift-gitops-operator-controller-manager-54fbbf499c-ztcm5   2/2     Running   0          8h
+NAME                                                           READY   STATUS    RESTARTS   AGE
+openshift-gitops-operator-controller-manager-b68c79dcf-nx6d4   2/2     Running   0          18m
 #+end_example
 
 
 ** Create required namespaces
 
-Once OpenShift GitOps is ready let's create the namespaces we'll be using
+Once OpenShift GitOps is ready let's create the namespaces we'll be using. It's pretty straightforward here, we just need a namespace for our principal cluster, and a namespace for each agent cluster.
 
 #+begin_src bash
-oc --context principal apply --kustomize control-plane/namespaces/base
+oc --context principal apply --filename 1-principal/principal-namespace.yaml
+oc --context principal apply --filename 1-principal/agent-namespace.yaml
 #+end_src
 
 #+RESULTS:
 #+begin_example
 namespace/argocd unchanged
 namespace/crl-cer-1 unchanged
-namespace/crl-cer-2 unchanged
 #+end_example
 
 
@@ -82,7 +82,7 @@ Generating CA and storing it in secret
 Success. CA data stored in secret argocd/argocd-agent-ca
 #+end_example
 
-Next issue a certificate that will be used to expose the Principal outside of the cluster. In this demo we will be using an OpenShift Route to expose the Principal.
+Next we issue a certificate that will be used to expose the Principal outside of the cluster. In this demo we will be using an OpenShift Route to expose the Principal.
 
 #+begin_src bash
 export SUBDOMAIN=$(oc --context principal get dns cluster --output jsonpath='{.spec.baseDomain}')
@@ -108,11 +108,13 @@ Secret argocd/argocd-agent-resource-proxy-tls created
 
 ** Deploy argocd principal
 
-With the operator, namespaces & pki in place we can now deploy the argocd principal.
+With the operator, namespaces & pki in place we can now deploy the argocd principal components.
 
 #+begin_src bash
 oc --context principal create secret generic argocd-redis -n argocd --from-literal=auth="$(oc --context principal get secret argocd-redis-initial-password --namespace argocd --output jsonpath='{.data.admin\.password}' | base64 --decode)"
-oc --context principal apply --kustomize control-plane/principal/base
+oc --context principal apply --filename 1-principal/argocd.yaml
+oc --context principal apply --filename 1-principal/route.yaml
+oc --context principal apply --filename 1-principal/proxy-service.yaml
 #+end_src
 
 #+RESULTS:
@@ -131,17 +133,17 @@ oc --context principal get pods --namespace argocd
 #+RESULTS:
 #+begin_example
 NAME                                      READY   STATUS    RESTARTS   AGE
-argocd-agent-principal-58687b848c-jdhjn   1/1     Running   0          7h18m
-argocd-dex-server-55cb6b974d-rlsh5        1/1     Running   0          7h18m
-argocd-redis-7bd6ddbb8d-wqbhr             1/1     Running   0          7h18m
-argocd-repo-server-67fd796f54-2zrlc       1/1     Running   0          7h18m
-argocd-server-fdbd85c86-gc2cq             1/1     Running   0          8m50s
+argocd-agent-principal-58687b848c-jbd2m   1/1     Running   0          35h
+argocd-dex-server-55cb6b974d-6hxp5        1/1     Running   0          37h
+argocd-redis-7bd6ddbb8d-rgzdn             1/1     Running   0          37h
+argocd-repo-server-67fd796f54-tdh42       1/1     Running   0          37h
+argocd-server-7cf5446d9-b7v8v             1/1     Running   0          35h
 #+end_example
 
 Lastly, we can create our agent configuration on the principal
 
 #+begin_src bash
-argocd-agentctl agent create crl-cer-2 \
+argocd-agentctl agent create crl-cer-1 \
   --principal-context principal \
   --principal-namespace argocd \
   --resource-proxy-server argocd-agent-resource-proxy.argocd.svc.cluster.local:9090
@@ -149,46 +151,54 @@ argocd-agentctl agent create crl-cer-2 \
 
 #+RESULTS:
 #+begin_example
-Agent crl-cer-2 created
+Agent crl-cer-1 created
 #+end_example
 
 
 * Installing the agent
 
-With the principal in place let's now deploy our agent
+With the principal in place let's now deploy our agent, starting with the operator.
+
+#+begin_quote
+Note: In the subscription for the agent we set ~DISABLE_DEFAULT_ARGOCD_INSTANCE~ true so that we don't deploy the default full "openshift-gitops" instance. Update this if your cluster does rely on having this available.
+#+end_quote
 
 #+begin_src bash
-oc --context crl-cer-2 apply --kustomize operator/base
+oc --context crl-cer-1 apply --filename 2-agent/operator-namespace.yaml
+oc --context crl-cer-1 apply --filename 2-agent/operator-subscription.yaml
+oc --context crl-cer-1 apply --filename 2-agent/operator-group.yaml
 #+end_src
 
 #+RESULTS:
 #+begin_example
-namespace/openshift-gitops-operator created
-operatorgroup.operators.coreos.com/openshift-gitops-operator created
-subscription.operators.coreos.com/openshift-gitops-operator created
+namespace/openshift-gitops-operator unchanged
+subscription.operators.coreos.com/openshift-gitops-operator configured
+operatorgroup.operators.coreos.com/openshift-gitops-operator unchanged
 #+end_example
 
 Once the operator is installed we can create the ~argocd~ resource representing our agent. Notice how ~service.enabled~ is set to ~false~.
 
 #+begin_src bash
-oc --context crl-cer-2 apply --kustomize managed-cluster/argocd/base
+oc --context crl-cer-1 apply --filename 2-agent/argocd-namespace.yaml
+oc --context crl-cer-1 apply --filename 2-agent/argocd-appproject.yaml
+oc --context crl-cer-1 apply --filename 2-agent/argocd.yaml
 #+end_src
 
 #+RESULTS:
 #+begin_example
-namespace/argocd created
-appproject.argoproj.io/crl-cer created
-argocd.argoproj.io/argocd created
+namespace/argocd unchanged
+appproject.argoproj.io/crl-cer configured
+argocd.argoproj.io/argocd unchanged
 #+end_example
 
 Finish setting up agent
 
 #+begin_src bash
 oc --context crl-cer-2 create secret generic argocd-redis -n argocd --from-literal=auth="$(oc --context crl-cer-2 get secret argocd-redis-initial-password -n argocd -o jsonpath='{.data.admin\.password}' | base64 -d)"
-argocd-agentctl pki issue agent crl-cer-2 --principal-context principal --principal-namespace argocd --agent-context crl-cer-2 --agent-namespace argocd --upsert
-argocd-agentctl pki propagate crl-cer-2 --principal-context principal --principal-namespace argocd --agent-context crl-cer-2 --agent-namespace argocd
+argocd-agentctl pki issue agent crl-cer-1 --principal-context principal --principal-namespace argocd --agent-context crl-cer-1 --agent-namespace argocd --upsert
+argocd-agentctl pki propagate crl-cer-1 --principal-context principal --principal-namespace argocd --agent-context crl-cer-1 --agent-namespace argocd
 export SUBDOMAIN=$(oc --context principal get dns cluster --output jsonpath='{.spec.baseDomain}')
-kustomize build managed-cluster/agent/base | envsubst | oc --context crl-cer-2 apply --filename -
+kustomize build 2-agent/ | envsubst | oc --context crl-cer-1 apply --filename -
 #+end_src
 
 #+RESULTS:
@@ -212,33 +222,13 @@ networkpolicy.networking.k8s.io/argocd-agent-redis-network-policy created
 
 * Deploying a sample application
 
+With the principal in place, and the agent running. Let's create an application on our agent cluster.  The agent will observe this and begin deploying it for us!
+
 #+begin_src bash
-cat << EOF | oc --context crl-cer-1 apply --filename -
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: bgd
-  namespace: argocd
-  finalizers:
-    # The default behaviour is foreground cascading deletion
-    - argocd.argoproj.io/resources-finalizer
-spec:
-  destination:
-    namespace: bgd
-    name: crl-cer-1
-  source:
-    path: apps/base
-    repoURL: https://github.com/jmhbnz/openshift-gitops-agent
-    targetRevision: HEAD
-  project: crl-cer-1
-  syncPolicy:
-    automated:
-      prune: false
-      selfHeal: true
-EOF
+oc --context crl-cer-1 apply --filename 3-application/application.yaml
 #+end_src
 
 #+RESULTS:
 #+begin_example
-application.argoproj.io/bgd configured
+application.argoproj.io/bgd-dev configured
 #+end_example

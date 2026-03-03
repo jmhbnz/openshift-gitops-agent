@@ -1,4 +1,0 @@
-resources:
-- control-plane-ns.yaml
-- managed-cluster-ns.yaml
-
