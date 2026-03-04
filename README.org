@@ -334,4 +334,4 @@ After creating the application we can log in to the instance of ArgoCD running i
 
 Within this principal instance we should now see our application syncing, even though the actual reconcilliation has all occurred and will continue to occur on our autonomous agent 🎉
 
-[[./3-agent/screenshot.yaml]]
+[[./3-application/screenshot.png]]
