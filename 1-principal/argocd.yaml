@@ -21,7 +21,7 @@ spec:
       jwtAllowGenerate: true
       auth: mtls:CN=([^,]+)
   sourceNamespaces:
-    - managed-cluster
+    - crl-cer-1
   rbac:
     defaultPolicy: ""
     policy: |

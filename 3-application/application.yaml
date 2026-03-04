@@ -9,10 +9,10 @@ metadata:
 spec:
   destination:
     namespace: bgd-dev
-    name: crl-cer-1
+    name: in-cluster
   source:
-    path: /
-    repoURL: https://github.com/gitops-examples/getting-started/bgd/base
+    path: bgd/base
+    repoURL: https://github.com/gitops-examples/getting-started
     targetRevision: HEAD
   project: crl-cer
   syncPolicy:

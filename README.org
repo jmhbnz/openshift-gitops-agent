@@ -7,15 +7,15 @@ A short walkthrough for deplying the new ArgoCD Agent architecture in ~autonomou
 
 * Pre-requisites
 
-- Two OpenShift Clusters, these instructions have been tested with OpenShift ~4.21~. The instructions assume that you have not installed the OpenShift GitOps operator as it will install the operator with a ~Subscription~ using specific configuration. If you already have the OpenShift GitOps Operator installed, review this aspect of the walkthrough carefully and adjust as neccessary for your environment.
+- [ ] Two OpenShift Clusters, these instructions have been tested with OpenShift ~4.21~. The instructions assume that you have not installed the OpenShift GitOps operator as it will install the operator with a ~Subscription~ using specific configuration. If you already have the OpenShift GitOps Operator installed, review this aspect of the walkthrough carefully and adjust as neccessary for your environment.
 
-- Access to those two clusters with cluster-admin privileges. This guide assumes you have two named ~oc~ contexts available, ~principal~ (hub) and ~crl-cer-1~ (autonomous agent).
+- [ ] Access to those two clusters with cluster-admin privileges. This guide assumes you have two named ~oc~ contexts available, ~principal~ (hub) and ~crl-cer-1~ (autonomous agent).
 
-- The ~oc~ command line tool available in your path.
+- [ ] The ~oc~ command line tool available in your path.
 
-- The ~argocd-agentctl~ command line tool available in your path. This tool is used to manage the PKI requirements for the Agent.
+- [ ] The ~argocd-agentctl~ command line tool available in your path. This tool is used to manage the PKI requirements for the Agent. Download this from https://github.com/argoproj-labs/argocd-agent/releases/tag/v0.7.0.
 
-- The ~envsubst~ command available on your path.
+- [ ] The ~envsubst~ command available on your path, this is typically already available on many distributions.
 
 
 * Setup principal
@@ -34,10 +34,11 @@ oc --context principal apply --filename 1-principal/operator-group.yaml
 
 #+RESULTS:
 #+begin_example
-namespace/openshift-gitops-operator unchanged
-subscription.operators.coreos.com/openshift-gitops-operator unchanged
-operatorgroup.operators.coreos.com/openshift-gitops-operator unchanged
+namespace/openshift-gitops-operator created
+subscription.operators.coreos.com/openshift-gitops-operator created
+operatorgroup.operators.coreos.com/openshift-gitops-operator created
 #+end_example
+
 
 We can review the pods in the ~openshift-gitops-operator~ namespace to confirm the operator has installed and is running:
 
@@ -47,14 +48,18 @@ oc --context principal get pods --namespace openshift-gitops-operator
 
 #+RESULTS:
 #+begin_example
-NAME                                                           READY   STATUS    RESTARTS   AGE
-openshift-gitops-operator-controller-manager-b68c79dcf-nx6d4   2/2     Running   0          18m
+NAME                                                            READY   STATUS    RESTARTS   AGE
+openshift-gitops-operator-controller-manager-844869476c-5t77m   2/2     Running   0          21s
 #+end_example
 
 
 ** Create required namespaces
 
 Once OpenShift GitOps is ready let's create the namespaces we'll be using. It's pretty straightforward here, we just need a namespace for our principal cluster, and a namespace for each agent cluster.
+
+#+begin_quote
+Note: We're intentionally using seperate namespaces to the standard ~openshift-gitops~ namespace in case we are already running a gitops stack on our hub cluster and wanting to leave that in place while we take the agent architecture for a spin.
+#+end_quote
 
 #+begin_src bash
 oc --context principal apply --filename 1-principal/principal-namespace.yaml
@@ -63,17 +68,23 @@ oc --context principal apply --filename 1-principal/agent-namespace.yaml
 
 #+RESULTS:
 #+begin_example
-namespace/argocd unchanged
-namespace/crl-cer-1 unchanged
+namespace/argocd created
+namespace/crl-cer-1 created
 #+end_example
 
 
 ** Create pki on principal
 
-The Argo CD Agent requires certificates to be provisioned on both the Control Plane and Agent clusters. These certificates are used to manage authorization and trust between the clusters. Alternatively Red Hat Advanced Cluster Manager will provide an add-on that will manage this for you automatically but for now we will use the ~argocd-agentctl~ CLI to do this.
+The Argo CD Agent requires certificates to be provisioned on both the **Principal** and **Agent** clusters. These certificates are used to manage authorization and trust between the clusters.
+
+#+begin_quote
+Note: Alternatively Red Hat Advanced Cluster Management provides an add-on that will manage this for you automatically. For this walkthrough we will use ~argocd-agentctl~ to do this to avoid interacting with a potentially pre-existing RHACM gitops configuration.
+#+end_quote
 
 #+begin_src bash
-argocd-agentctl pki init --principal-context principal --principal-namespace argocd
+argocd-agentctl pki init \
+    --principal-context principal \
+    --principal-namespace argocd
 #+end_src
 
 #+RESULTS:
@@ -82,22 +93,31 @@ Generating CA and storing it in secret
 Success. CA data stored in secret argocd/argocd-agent-ca
 #+end_example
 
-Next we issue a certificate that will be used to expose the Principal outside of the cluster. In this demo we will be using an OpenShift Route to expose the Principal.
+
+Next we issue a certificate that will be used to expose the Principal outside of the cluster. In this demo we will be using an OpenShift Route to expose the Principal but you could alternatively use some a load balancer or alternative network solution instead.
 
 #+begin_src bash
 export SUBDOMAIN=$(oc --context principal get dns cluster --output jsonpath='{.spec.baseDomain}')
-argocd-agentctl pki issue principal --dns argocd-agent-principal-argocd.apps.$SUBDOMAIN --principal-context principal --principal-namespace argocd
+
+argocd-agentctl pki issue principal \
+    --dns argocd-agent-principal-argocd.apps.${SUBDOMAIN} \
+    --principal-context principal \
+    --principal-namespace argocd
 #+end_src
 
 #+RESULTS:
 #+begin_example
-argocd/argocd-agent-principal-tls
+Secret argocd/argocd-agent-principal-tls created
 #+end_example
 
-Now we need to provision the certificate for the Principals ~resource-proxy~, this is to enable the Argo CD server pod to communicate with the Principal to retrieve resources, for example when viewing manifests in the Argo CD UI:
+
+Now we need to provision the certificate for the Principals ~resource-proxy~, this is to enable the Argo CD Agent to communicate with the Principal to sync resources.
 
 #+begin_src bash
-argocd-agentctl pki issue resource-proxy --dns argocd-agent-resource-proxy.argocd.svc.cluster.local --principal-context principal --principal-namespace argocd
+argocd-agentctl pki issue resource-proxy \
+    --dns argocd-agent-resource-proxy.argocd.svc.cluster.local \
+    --principal-context principal \
+    --principal-namespace argocd
 #+end_src
 
 #+RESULTS:
@@ -106,12 +126,26 @@ Secret argocd/argocd-agent-resource-proxy-tls created
 #+end_example
 
 
+Lastly we need to generate the JWT signing key as follows:
+
+#+begin_src bash
+argocd-agentctl jwt create-key \
+    --principal-context principal \
+    --upsert
+#+end_src
+
+#+RESULTS:
+#+begin_example
+Generating JWT signing key...
+Success. JWT signing key created and stored in secret argocd/argocd-agent-jwt
+#+end_example
+
+
 ** Deploy argocd principal
 
 With the operator, namespaces & pki in place we can now deploy the argocd principal components.
 
 #+begin_src bash
-oc --context principal create secret generic argocd-redis -n argocd --from-literal=auth="$(oc --context principal get secret argocd-redis-initial-password --namespace argocd --output jsonpath='{.data.admin\.password}' | base64 --decode)"
 oc --context principal apply --filename 1-principal/argocd.yaml
 oc --context principal apply --filename 1-principal/route.yaml
 oc --context principal apply --filename 1-principal/proxy-service.yaml
@@ -119,12 +153,17 @@ oc --context principal apply --filename 1-principal/proxy-service.yaml
 
 #+RESULTS:
 #+begin_example
-service/argocd-agent-resource-proxy unchanged
-argocd.argoproj.io/argocd configured
-route.route.openshift.io/argocd-agent-principal unchanged
+argocd.argoproj.io/argocd created
+route.route.openshift.io/argocd-agent-principal created
+service/argocd-agent-resource-proxy created
 #+end_example
 
+
 We can check that the principal has started by reviewing the application pods.
+
+#+begin_quote
+Note: It's normal for the ~argocd-agent-principal~ pod to be in a ~CrashLoopBackOff~ state at this stage. This will heal later once the remaining configuration is completed.
+#+end_quote
 
 #+begin_src bash
 oc --context principal get pods --namespace argocd
@@ -132,15 +171,36 @@ oc --context principal get pods --namespace argocd
 
 #+RESULTS:
 #+begin_example
-NAME                                      READY   STATUS    RESTARTS   AGE
-argocd-agent-principal-58687b848c-jbd2m   1/1     Running   0          35h
-argocd-dex-server-55cb6b974d-6hxp5        1/1     Running   0          37h
-argocd-redis-7bd6ddbb8d-rgzdn             1/1     Running   0          37h
-argocd-repo-server-67fd796f54-tdh42       1/1     Running   0          37h
-argocd-server-7cf5446d9-b7v8v             1/1     Running   0          35h
+NAME                                      READY   STATUS             RESTARTS      AGE
+argocd-agent-principal-544f769545-bllbz   0/1     CrashLoopBackOff   5 (63s ago)   4m23s
+argocd-dex-server-5847947656-rmjnm        1/1     Running            0             4m23s
+argocd-redis-5dc66c9bc8-9bgrd             1/1     Running            0             4m24s
+argocd-repo-server-7f9d4f867-f9b2w        1/1     Running            0             4m24s
+argocd-server-74dc7688f6-vjmwm            1/1     Running            0             4m24s
 #+end_example
 
-Lastly, we can create our agent configuration on the principal
+
+** Create missing redis secret
+
+The argo agent principal currently looks for a specifically named secret ~argocd-redis~ secret when it launches. The redis secret is created with a different name by the OpenShift GitOps operator currently so we need to create the secret with the correct name manually.
+
+#+begin_src bash
+export REDIS_PASSWORD="$(oc --context principal get secret argocd-redis-initial-password --namespace argocd --output jsonpath='{.data.admin\.password}' | base64 --decode)"
+
+oc --context principal create secret generic argocd-redis \
+    --namespace argocd \
+    --from-literal=auth="${REDIS_PASSWORD}"
+#+end_src
+
+#+RESULTS:
+#+begin_example
+secret/argocd-redis created
+#+end_example
+
+
+** Configure principal for agent
+
+Lastly, we can inform the principal about our soon to be coming online agent cluster.
 
 #+begin_src bash
 argocd-agentctl agent create crl-cer-1 \
@@ -149,13 +209,11 @@ argocd-agentctl agent create crl-cer-1 \
   --resource-proxy-server argocd-agent-resource-proxy.argocd.svc.cluster.local:9090
 #+end_src
 
-#+RESULTS:
-#+begin_example
-Agent crl-cer-1 created
-#+end_example
-
 
 * Installing the agent
+
+
+** Install openshift gitops
 
 With the principal in place let's now deploy our agent, starting with the operator.
 
@@ -171,9 +229,9 @@ oc --context crl-cer-1 apply --filename 2-agent/operator-group.yaml
 
 #+RESULTS:
 #+begin_example
-namespace/openshift-gitops-operator unchanged
-subscription.operators.coreos.com/openshift-gitops-operator configured
-operatorgroup.operators.coreos.com/openshift-gitops-operator unchanged
+namespace/openshift-gitops-operator created
+subscription.operators.coreos.com/openshift-gitops-operator created
+operatorgroup.operators.coreos.com/openshift-gitops-operator created
 #+end_example
 
 Once the operator is installed we can create the ~argocd~ resource representing our agent. Notice how ~service.enabled~ is set to ~false~.
@@ -186,37 +244,75 @@ oc --context crl-cer-1 apply --filename 2-agent/argocd.yaml
 
 #+RESULTS:
 #+begin_example
-namespace/argocd unchanged
-appproject.argoproj.io/crl-cer configured
-argocd.argoproj.io/argocd unchanged
+namespace/argocd created
+appproject.argoproj.io/crl-cer created
+argocd.argoproj.io/argocd created
 #+end_example
 
-Finish setting up agent
+
+** Create missing redis secret
+
+As we did on the principal we need to create the correctly named redis secret.
 
 #+begin_src bash
-oc --context crl-cer-2 create secret generic argocd-redis -n argocd --from-literal=auth="$(oc --context crl-cer-2 get secret argocd-redis-initial-password -n argocd -o jsonpath='{.data.admin\.password}' | base64 -d)"
-argocd-agentctl pki issue agent crl-cer-1 --principal-context principal --principal-namespace argocd --agent-context crl-cer-1 --agent-namespace argocd --upsert
-argocd-agentctl pki propagate crl-cer-1 --principal-context principal --principal-namespace argocd --agent-context crl-cer-1 --agent-namespace argocd
-export SUBDOMAIN=$(oc --context principal get dns cluster --output jsonpath='{.spec.baseDomain}')
-kustomize build 2-agent/ | envsubst | oc --context crl-cer-1 apply --filename -
+export REDIS_PASSWORD="$(oc --context crl-cer-1 get secret argocd-redis-initial-password --namespace argocd --output jsonpath='{.data.admin\.password}' | base64 --decode)"
+
+oc --context crl-cer-1 create secret generic argocd-redis \
+    --namespace argocd \
+    --from-literal=auth="${REDIS_PASSWORD}"
 #+end_src
 
 #+RESULTS:
 #+begin_example
 secret/argocd-redis created
-Secret argocd/argocd-agent-client-tls created
-Agent CA secret argocd/argocd-agent-ca created
+#+end_example
+
+
+** Create pki on agent
+
+Now we create the corresponding pki assets on the agent side to ensure secure mTLS communication between the agent and the principal.
+
+In this step we also propagate the CA certificate stored in the ~argocd-agent-ca~ secret on the Principal to the Agent.
+
+#+begin_src bash
+argocd-agentctl pki issue agent crl-cer-1 \
+    --principal-context principal \
+    --principal-namespace argocd \
+    --agent-context crl-cer-1 \
+    --agent-namespace argocd
+
+argocd-agentctl pki propagate crl-cer-1 \
+    --principal-context principal \
+    --principal-namespace argocd \
+    --agent-context crl-cer-1 \
+    --agent-namespace argocd
+#+end_src
+
+
+** Deploy argocd agent
+
+With everything in place we can now spin up the agent.
+
+#+begin_quote
+Note: The manifest for the agent was assembled from https://github.com/argoproj-labs/argocd-agent/tree/main/install/kubernetes/agent.
+#+end_quote
+
+#+begin_src bash
+oc --context crl-cer-1 apply --filename 2-agent/agent.yaml
+#+end_src
+
+#+RESULTS:
+#+begin_example
 serviceaccount/argocd-agent-agent created
 role.rbac.authorization.k8s.io/argocd-agent-agent created
-clusterrole.rbac.authorization.k8s.io/argocd-agent-agent created
+clusterrole.rbac.authorization.k8s.io/argocd-agent-agent unchanged
 rolebinding.rbac.authorization.k8s.io/argocd-agent-agent created
-clusterrolebinding.rbac.authorization.k8s.io/agent-application-controller-cluster-admin created
-clusterrolebinding.rbac.authorization.k8s.io/argocd-agent-agent created
-configmap/argocd-agent-params created
+clusterrolebinding.rbac.authorization.k8s.io/agent-application-controller-cluster-admin unchanged
+clusterrolebinding.rbac.authorization.k8s.io/argocd-agent-agent unchanged
+configmap/argocd-agent-params unchanged
 service/argocd-agent-agent-healthz created
 service/argocd-agent-agent-metrics created
 deployment.apps/argocd-agent-agent created
-networkpolicy.networking.k8s.io/argocd-agent-redis-network-policy created
 #+end_example
 
 
@@ -230,5 +326,12 @@ oc --context crl-cer-1 apply --filename 3-application/application.yaml
 
 #+RESULTS:
 #+begin_example
-application.argoproj.io/bgd-dev configured
+application.argoproj.io/bgd-dev created
 #+end_example
+
+
+After creating the application we can log in to the instance of ArgoCD running in the ~argocd~ namespace on the principal / hub cluster. Use the admin password from the automatically generated secret for this.
+
+Within this principal instance we should now see our application syncing, even though the actual reconcilliation has all occurred and will continue to occur on our autonomous agent 🎉
+
+[[./3-agent/screenshot.yaml]]
